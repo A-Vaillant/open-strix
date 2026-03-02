@@ -25,15 +25,17 @@ Most agent frameworks optimize for tool-calling pipelines or enterprise orchestr
 
 Three design bets:
 
-- **Small.** ~5,400 lines of Python. Six source files do the real work. Built on [LangGraph DeepAgents](https://github.com/langchain-ai/deepagents) for the agent loop, Discord for the interface. Extensible via skills (markdown files in a directory) and MCP servers.
+- **Focused.** It has a small core that's easily extended through skills, MCP servers, and an HTTP API for incoming events. 
 - **Cheap.** Defaults to MiniMax M2.5 via the Anthropic-compatible API. Pennies per message. This is a personal tool, not an enterprise deployment. Run it on a $5/month VPS.
 - **Stable.** This is the weird one. open-strix ships with built-in skills for self-diagnosis — prediction calibration loops, event introspection, onboarding that fades into regular operation. The agent can read its own logs, check whether its predictions were right, and notice when it's drifting. The design draws on cybernetics (specifically viable system theory): an agent that can't monitor and correct its own behavior will eventually degrade. So the correction loops are built in, not bolted on.
+
+In other words, it's built to be sustainable.
 
 ## How it works
 
 ### The home repo
 
-When you run `open-strix setup`, it creates a directory — the agent's *home*. Everything the agent knows lives here:
+When you run `uvx open-strix setup`, it creates a directory — the agent's *home*. Everything the agent knows lives here:
 
 ```
 blocks/          # YAML memory blocks — identity, goals, patterns. In every prompt.
