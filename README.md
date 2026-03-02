@@ -84,6 +84,8 @@ This is how agents develop autonomy: scheduled check-ins, maintenance routines, 
 
 Every tool call, incoming message, error, and scheduler trigger is logged to `logs/events.jsonl`. The agent can read its own event log — and the introspection skill teaches it how. This is the self-diagnosis backbone: the agent has full visibility into what it did and what went wrong.
 
+When `api_port` is set in `config.yaml`, a loopback REST API accepts events from external scripts — Bluesky pollers, CI hooks, cross-agent communication. See [docs/events.md](docs/events.md) for the full event schema, query cookbook, and REST API reference.
+
 ## Growing an agent
 
 The code is the easy part. The real work is the conversations.
