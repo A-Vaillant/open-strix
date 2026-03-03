@@ -92,6 +92,7 @@ def test_journal_rendering_format_and_channel_id_autofill(
     monkeypatch.setattr(app_mod, "create_deep_agent", lambda **_: DummyAgent())
     app = app_mod.OpenStrixApp(tmp_path)
     app.current_channel_id = "777"
+    (tmp_path / "blocks").mkdir(parents=True, exist_ok=True)
     (tmp_path / "blocks" / "voice.yaml").write_text(
         "name: style\nsort_order: 1\ntext: concise and practical\n",
         encoding="utf-8",

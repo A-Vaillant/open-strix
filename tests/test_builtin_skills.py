@@ -105,6 +105,7 @@ def test_memory_dashboard_script_prints_output_file_and_text_report(tmp_path: Pa
     layout = RepoLayout(home=home, state_dir_name=STATE_DIR_NAME)
     bootstrap_home_repo(layout, checkpoint_text="checkpoint")
 
+    (home / "blocks").mkdir(parents=True, exist_ok=True)
     (home / "blocks" / "persona.yaml").write_text(
         "name: persona\ntext: concise and practical\n",
         encoding="utf-8",
@@ -140,6 +141,7 @@ def test_file_frequency_report_groups_file_access_by_session(tmp_path: Path) -> 
     (home / "logs" / "fetch-cache" / "a.txt").write_text("alpha", encoding="utf-8")
     (home / "state" / "attachments").mkdir(parents=True, exist_ok=True)
     (home / "state" / "attachments" / "123-notes.txt").write_text("notes", encoding="utf-8")
+    (home / "blocks").mkdir(parents=True, exist_ok=True)
     (home / "blocks" / "persona.yaml").write_text("name: persona\ntext: example\n", encoding="utf-8")
     (home / "blocks" / "goals.yaml").write_text("name: goals\ntext: focus\n", encoding="utf-8")
 
