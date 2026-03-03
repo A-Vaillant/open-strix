@@ -247,12 +247,28 @@ Folders are created automatically on startup. Add custom folders to give your ag
 folders:
   state: rw
   skills: rw
-  blocks: ro
   scripts: ro
   logs: ro
   research: ro       # custom read-only folder
   data: rw           # custom read-write folder
 ```
+
+#### External directories
+
+Folder paths can be relative to the agent's home directory. Use `../` to give an agent read-only access to a sibling directory:
+
+```yaml
+folders:
+  state: rw
+  skills: rw
+  scripts: ro
+  logs: ro
+  "../cybernetics-research": ro   # sibling directory, read-only
+```
+
+If the agent lives at `~/jester/`, this resolves to `~/cybernetics-research/`. The agent can read files in that directory but can't modify them.
+
+This is useful for giving an agent access to shared resources — research repos, documentation, datasets — without copying them into the agent's home directory. The directory is created on startup if it doesn't exist.
 
 ### MCP Servers
 
