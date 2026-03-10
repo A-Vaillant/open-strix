@@ -96,6 +96,29 @@ class TestLoadConfigFolders:
         assert config.folders == DEFAULT_FOLDERS
 
 
+class TestLoadConfigDisableBuiltinSkills:
+    def test_loads_disable_list(self, tmp_path: Path) -> None:
+        config_data = {
+            "model": "test-model",
+            "disable_builtin_skills": ["skill-acquisition", "prediction-review"],
+        }
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.safe_dump(config_data), encoding="utf-8")
+
+        layout = RepoLayout(home=tmp_path, state_dir_name="state")
+        config = load_config(layout)
+        assert config.disable_builtin_skills == {"skill-acquisition", "prediction-review"}
+
+    def test_empty_by_default(self, tmp_path: Path) -> None:
+        config_data = {"model": "test-model"}
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.safe_dump(config_data), encoding="utf-8")
+
+        layout = RepoLayout(home=tmp_path, state_dir_name="state")
+        config = load_config(layout)
+        assert config.disable_builtin_skills == set()
+
+
 class TestBootstrapCreatesFolders:
     def test_default_folders_created(self, tmp_path: Path) -> None:
         layout = RepoLayout(home=tmp_path, state_dir_name="state")

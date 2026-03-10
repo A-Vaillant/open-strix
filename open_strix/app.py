@@ -23,7 +23,7 @@ from deepagents.backends.protocol import EditResult, FileUploadResponse, WriteRe
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from .builtin_skills import BUILTIN_HOME_DIRNAME
+from .builtin_skills import BUILTIN_HOME_DIRNAME, sync_builtin_skills_home
 from .config import (
     DEFAULT_CONFIG,
     DEFAULT_MODEL,
@@ -290,6 +290,10 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin):
         self.layout = RepoLayout(home=self.home, state_dir_name=STATE_DIR_NAME)
         bootstrap_home_repo(self.layout, checkpoint_text=DEFAULT_CHECKPOINT)
         self.config = load_config(self.layout)
+        if self.config.disable_builtin_skills:
+            sync_builtin_skills_home(
+                self.home, disabled_skills=self.config.disable_builtin_skills,
+            )
         load_dotenv(dotenv_path=self.layout.env_file, override=False)
         self.tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
         self.tavily_search_url = os.getenv("TAVILY_SEARCH_URL", "").strip()

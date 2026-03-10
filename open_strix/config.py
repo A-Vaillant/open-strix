@@ -173,6 +173,7 @@ class AppConfig:
     api_port: int = 0
     folders: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_FOLDERS))
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
+    disable_builtin_skills: set[str] = field(default_factory=set)
 
     @property
     def writable_dirs(self) -> list[str]:
@@ -235,6 +236,7 @@ def load_config(layout: RepoLayout) -> AppConfig:
         api_port=int(loaded.get("api_port", 0)),
         folders=_parse_folders(loaded.get("folders")),
         mcp_servers=parse_mcp_server_configs(loaded.get("mcp_servers")),
+        disable_builtin_skills=_normalize_id_list(loaded.get("disable_builtin_skills")),
     )
 
 
@@ -266,7 +268,12 @@ def _ensure_config_defaults(config_file: Path) -> None:
         config_file.write_text(yaml.safe_dump(loaded, sort_keys=False), encoding="utf-8")
 
 
-def bootstrap_home_repo(layout: RepoLayout, checkpoint_text: str) -> None:
+def bootstrap_home_repo(
+    layout: RepoLayout,
+    checkpoint_text: str,
+    *,
+    disabled_builtin_skills: set[str] | None = None,
+) -> None:
     # Ensure config exists first so we can read folders from it.
     _write_if_missing(layout.config_file, DEFAULT_CONFIG)
     _ensure_config_defaults(layout.config_file)
@@ -292,7 +299,7 @@ def bootstrap_home_repo(layout: RepoLayout, checkpoint_text: str) -> None:
     _write_if_missing(layout.checkpoint_file, checkpoint_text)
     if "scripts" in folders:
         _write_if_missing(layout.scripts_dir / "pre_commit.py", DEFAULT_PRE_COMMIT_SCRIPT)
-    sync_builtin_skills_home(layout.home)
+    sync_builtin_skills_home(layout.home, disabled_skills=disabled_builtin_skills)
     _cleanup_legacy_builtin_scripts(layout)
     _install_git_hook(layout.home)
     _ensure_logs_ignored(layout.home)
