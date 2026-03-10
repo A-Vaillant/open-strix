@@ -25,7 +25,7 @@ Most agent frameworks optimize for tool-calling pipelines or enterprise orchestr
 
 Three design bets:
 
-- **Focused.** It has a small core that's easily extended through skills, MCP servers, and an HTTP API for incoming events. 
+- **Focused.** Small core, everything else is skills — markdown files the agent reads and follows. Add capabilities by dropping a file in `skills/`, or let the agent discover and install them from [ClawHub](https://clawhub.ai) at runtime. MCP servers and an HTTP API handle external integrations.
 - **Cheap.** Defaults to MiniMax M2.5 via the Anthropic-compatible API. Pennies per message. This is a personal tool, not an enterprise deployment. Run it on a $5/month VPS.
 - **Stable.** This is the weird one. open-strix ships with built-in skills for self-diagnosis — prediction calibration loops, event introspection, onboarding that fades into regular operation. The agent can read its own logs, check whether its predictions were right, and notice when it's drifting. The design draws on cybernetics (specifically viable system theory): an agent that can't monitor and correct its own behavior will eventually degrade. So the correction loops are built in, not bolted on.
 
@@ -72,7 +72,26 @@ description: What this skill does and when to use it.
 ...
 ```
 
-open-strix also ships with built-in skills that teach the agent how to operate: memory management, prediction review, self-diagnosis, onboarding, and skill creation.
+open-strix ships with built-in skills that teach the agent how to operate:
+
+| Skill | Purpose |
+|-------|---------|
+| **onboarding** | Walks the agent through establishing identity, goals, and schedules |
+| **memory** | How to maintain and organize memory blocks and state files |
+| **skill-creator** | Create new skills from repeated workflows |
+| **skill-acquisition** | Discover and install skills from [ClawHub](https://clawhub.ai), [skillflag](https://agentskills.io)-compliant CLIs, and GitHub |
+| **prediction-review** | Calibration loops — revisit past predictions against ground truth |
+| **introspection** | Self-diagnosis from event logs and behavioral patterns |
+
+The agent can also discover and install skills from the ecosystem at runtime. The built-in **skill-acquisition** skill teaches it how to search [ClawHub](https://clawhub.ai) (a public registry with 64K+ archived skills), install from skillflag-compliant CLI tools, and wrap external skills for its own use. See [docs/skills.md](docs/skills.md) for the full extensibility model.
+
+Don't want some builtins? Disable them in `config.yaml`:
+
+```yaml
+disable_builtin_skills:
+  - skill-acquisition
+  - prediction-review
+```
 
 ### Scheduling
 
