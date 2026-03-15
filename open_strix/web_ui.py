@@ -830,6 +830,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
           filesEl.value = "";
           pastedFiles = [];
           updateFileList();
+          isNearBottom = true;
           await refresh();
         }} catch (error) {{
           console.error(error);
@@ -876,13 +877,6 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       }});
       filesEl.addEventListener("change", updateFileList);
       composerEl.addEventListener("submit", sendMessage);
-
-      messagesEl.addEventListener("scroll", () => {{
-        isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-        if (messagesEl.scrollTop < 150 && hasMoreHistory && !loadingHistory) {{
-          loadHistory();
-        }}
-      }});
 
       messagesEl.addEventListener("scroll", () => {{
         isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
