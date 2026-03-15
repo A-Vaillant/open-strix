@@ -1,0 +1,195 @@
+# Poller Design Patterns
+
+Practical patterns for writing reliable pollers. Read SKILL.md first for the basics.
+
+## State Management
+
+Pollers are stateless processes that run on a cron schedule. Between runs, they need to remember what they've already seen. This is entirely the poller's responsibility — the scheduler doesn't track state for you.
+
+### The Cursor Pattern
+
+Every poller needs a cursor — a marker for "where I left off." Store it in `STATE_DIR`.
+
+```python
+STATE_DIR = Path(os.environ.get("STATE_DIR", "."))
+CURSOR_FILE = STATE_DIR / "cursor.json"
+
+def load_cursor():
+    if CURSOR_FILE.exists():
+        return json.loads(CURSOR_FILE.read_text())
+    return {}
+
+def save_cursor(cursor):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    CURSOR_FILE.write_text(json.dumps(cursor, indent=2))
+```
+
+**Use timestamps, not IDs.** URIs and IDs can be deleted, reordered, or non-monotonic. Timestamps (`indexed_at`, `created_at`, `updated_at`) are stable and monotonically increasing.
+
+```python
+# Good — timestamp cursor
+cursor = load_cursor()
+last_seen = cursor.get("last_indexed_at")
+for item in items:
+    if last_seen and item.indexed_at <= last_seen:
+        continue
+    # process item...
+    cursor["last_indexed_at"] = item.indexed_at
+save_cursor(cursor)
+
+# Bad — URI cursor (fragile)
+if item.uri == last_uri:
+    break  # What if this URI was deleted?
+```
+
+### Always Save the Cursor
+
+Save cursor state even when there are no new items. This prevents re-processing if the cursor file was missing.
+
+```python
+# Always save, even on empty runs
+save_cursor(cursor)
+```
+
+### Cursor Recovery
+
+On first run (no cursor file), either:
+- **Process nothing** — safest default, avoids flooding the agent with old items
+- **Process last N items** — if you want to bootstrap with recent history
+
+```python
+cursor = load_cursor()
+if not cursor:
+    # First run: only process items from the last hour
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    cursor["last_indexed_at"] = cutoff
+```
+
+## Filtering
+
+Pollers should be selective. The agent gets one event per stdout line, so noise = wasted LLM calls.
+
+### Filter by Type
+
+Most APIs return mixed notification types. Only emit the ones your agent can act on.
+
+```python
+# Good — selective
+ACTIONABLE_TYPES = {"reply", "mention", "quote"}
+for notif in notifications:
+    if notif.reason not in ACTIONABLE_TYPES:
+        continue
+
+# Bad — everything including likes, follows, reposts
+for notif in notifications:
+    emit(format_notification(notif))  # Agent can't do anything with "New like from @user!"
+```
+
+### Don't Filter on Read/Seen Status
+
+Many APIs have an `is_read` or `seen` flag. Don't use it — it changes when anyone (or any client) views the resource, which may not be your agent.
+
+```python
+# Bad — breaks if you view profile in a browser
+if notif.is_read:
+    continue
+
+# Good — use your own cursor
+if last_seen and notif.indexed_at <= last_seen:
+    continue
+```
+
+## Prompt Quality
+
+The `prompt` field is what the agent sees. Make it actionable.
+
+### Include Context for Action
+
+If the agent needs to reply, it needs URIs and CIDs. If it needs to close an issue, it needs the issue number.
+
+```python
+# Good — agent has everything it needs to act
+prompt = f'@{handle} replied to your post: "{text}"'
+prompt += f"\nReply URI: {notif.uri} | CID: {notif.cid}"
+prompt += f"\nOriginal post URI: {notif.reason_subject}"
+
+# Bad — agent knows something happened but can't do anything
+prompt = f"@{handle} replied: {text}"
+```
+
+### Truncate Thoughtfully
+
+Long text should be truncated, but include enough for the agent to understand context.
+
+```python
+text = (record.text[:300] + "...") if len(record.text) > 300 else record.text
+```
+
+## Error Handling
+
+Pollers run unattended. Failures should be silent (exit non-zero) rather than emitting garbage.
+
+```python
+def main():
+    try:
+        client = create_client()
+    except Exception as e:
+        print(f"Auth failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        response = client.fetch_notifications()
+    except Exception as e:
+        print(f"API call failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Only reach emit() if everything succeeded
+    for item in process(response):
+        emit(item)
+```
+
+**Never emit on error.** A malformed event wastes an LLM call. Exit non-zero instead — the scheduler logs it as `poller_nonzero_exit`.
+
+## Local Event Log
+
+Optionally write events to a local JSONL file for debugging and history. This is separate from stdout (which the scheduler reads).
+
+```python
+EVENTS_FILE = STATE_DIR / "events.jsonl"
+
+def emit(prompt):
+    event = {"poller": POLLER_NAME, "prompt": prompt}
+    # Stdout — scheduler picks this up
+    print(json.dumps(event), flush=True)
+    # Local log — stays for debugging
+    with open(EVENTS_FILE, "a") as f:
+        event["timestamp"] = datetime.now(timezone.utc).isoformat()
+        f.write(json.dumps(event) + "\n")
+```
+
+## File Layout
+
+```
+skills/my-monitor/
+├── SKILL.md           ← skill metadata + docs
+├── pollers.json       ← declares pollers (scheduler reads this)
+├── poller.py          ← the script
+├── cursor.json        ← cursor state (written by poller)
+├── events.jsonl       ← optional local event log
+└── requirements.txt   ← if the poller has Python dependencies
+```
+
+Keep all poller state in `STATE_DIR`. Don't write to random locations — it makes debugging hard and breaks if the skill is moved.
+
+## Anti-Patterns
+
+| Anti-Pattern | Problem | Fix |
+|---|---|---|
+| URI-based cursors | URIs can be deleted or reordered | Use timestamps |
+| Filtering on `is_read` | Changes when any client views the resource | Use your own cursor |
+| Emitting likes/follows | Agent can't act on these | Filter to actionable types |
+| Missing URI/CID in prompts | Agent can't reply or take action | Include identifiers |
+| No error handling | Malformed output wastes LLM calls | try/except + sys.exit(1) |
+| Hardcoded paths | Breaks when moved or run by scheduler | Use STATE_DIR env var |
+| Writing state outside STATE_DIR | Hard to debug, breaks portability | Keep everything in STATE_DIR |
+| Forgetting `reload_pollers` | Poller exists but scheduler doesn't know about it | Always call after creating/updating pollers.json |

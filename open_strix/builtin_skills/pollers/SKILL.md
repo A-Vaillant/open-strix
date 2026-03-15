@@ -120,6 +120,15 @@ skills/my-monitor/
 └── events.jsonl        ← optional local event log
 ```
 
+## Design Patterns
+
+See [design-patterns.md](design-patterns.md) for detailed guidance on:
+- **State management** — cursor pattern, timestamp vs URI cursors, recovery on first run
+- **Filtering** — selecting actionable notification types, avoiding `is_read` traps
+- **Prompt quality** — including URIs/CIDs so the agent can act, not just observe
+- **Error handling** — fail silently (exit non-zero), never emit on error
+- **Anti-patterns** — common mistakes and how to avoid them
+
 ## Key Constraints
 
 - **60-second timeout.** If a poller doesn't finish in 60s, it's killed and the cycle is skipped.
