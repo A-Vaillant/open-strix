@@ -152,6 +152,26 @@ The setup command handles everything: directory structure, git init, GitHub repo
 
 See [SETUP.md](SETUP.md) for detailed instructions on environment variables, model configuration, Discord setup, and deployment options.
 
+## Upgrading
+
+```bash
+uv add -U open-strix
+```
+
+Or with pip:
+
+```bash
+pip install -U open-strix
+```
+
+This upgrades the open-strix package in your agent's home directory. Your memory blocks, state files, skills, and config are untouched — they live in your repo, not in the package. Restart the agent after upgrading.
+
+If you used `uvx` to run setup originally, you can also upgrade via:
+
+```bash
+uvx --upgrade open-strix
+```
+
 ## Configuration
 
 `config.yaml`:
