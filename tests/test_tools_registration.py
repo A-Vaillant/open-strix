@@ -6,8 +6,11 @@ _build_tools() returns, making it invisible to agents at runtime.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
+
+import open_strix.tools as tools_mod
 
 
 TOOLS_PY = Path(__file__).resolve().parent.parent / "open_strix" / "tools.py"
@@ -43,3 +46,15 @@ def test_all_tools_registered():
         f"Tools defined with @tool() but missing from the returned list: {missing}. "
         f"Add them to the `tools` list in _build_tools()."
     )
+
+
+def test_run_shell_replaces_invalid_utf8_output() -> None:
+    if os.name == "nt":
+        command = "$stdout = [Console]::OpenStandardOutput(); $stdout.WriteByte(0x96)"
+    else:
+        command = "printf '\\226'"
+
+    result = tools_mod._run_shell(command, timeout_seconds=5)
+
+    assert result.returncode == 0
+    assert result.stdout == "\ufffd"

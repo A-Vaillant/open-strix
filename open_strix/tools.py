@@ -195,7 +195,8 @@ def _run_shell(command: str, timeout_seconds: int) -> subprocess.CompletedProces
     return subprocess.run(
         _shell_command_for_platform(command),
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=timeout_seconds,
     )
