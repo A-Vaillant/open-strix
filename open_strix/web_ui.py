@@ -225,7 +225,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M2%201h3v5l4-5h4L8%207l5%208H9L6%2010l-1%201v4H2z%27%20fill%3D%27%230d766e%27%2F%3E%3C%2Fsvg%3E" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M11.5%204.5C11.5%202.01%209.99.5%207.5.5%205.01.5%203.5%202.01%203.5%204.5c0%202%201.5%203%203.5%204s2.5%202%202.5%203.5c0%201.38-1.12%202-2%202s-2-.62-2-2H3.5c0%202.49%202.01%204%204%204s4-1.51%204-4c0-2-1.5-3-3.5-4S5.5%206.5%205.5%204.5c0-1.38.62-2%202-2s2%201.12%202%202z%27%20fill%3D%27%230d766e%27%2F%3E%3C%2Fsvg%3E" />
     <title>{agent_name} Chat</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
