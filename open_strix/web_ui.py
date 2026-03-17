@@ -670,12 +670,129 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       let hasMoreHistory = true;
       let loadingHistory = false;
       let isNearBottom = true;
+      let hasCompletedInitialRender = false;
+      let hasUnreadMessages = false;
+      let titleFlashTimer = 0;
+      let titleFlashShowingUnread = false;
+      let notificationPermissionRequested = false;
+      const originalTitle = document.title;
+      const unreadTitle = "💬 New message";
+      const notificationSoundDataUri = createNotificationSoundDataUri();
 
       function formatTime(value) {{
         if (!value) return "";
         const dt = new Date(value);
         if (Number.isNaN(dt.getTime())) return value;
         return dt.toLocaleTimeString([], {{ hour: "numeric", minute: "2-digit" }});
+      }}
+
+      // Build a short inline WAV so the page stays self-contained.
+      function createNotificationSoundDataUri() {{
+        const sampleRate = 8000;
+        const durationSeconds = 0.12;
+        const frequency = 660;
+        const amplitude = 0.18;
+        const sampleCount = Math.floor(sampleRate * durationSeconds);
+        const wavBytes = new Uint8Array(44 + sampleCount * 2);
+        const view = new DataView(wavBytes.buffer);
+
+        function writeAscii(offset, text) {{
+          for (let index = 0; index < text.length; index += 1) {{
+            view.setUint8(offset + index, text.charCodeAt(index));
+          }}
+        }}
+
+        writeAscii(0, "RIFF");
+        view.setUint32(4, 36 + sampleCount * 2, true);
+        writeAscii(8, "WAVE");
+        writeAscii(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeAscii(36, "data");
+        view.setUint32(40, sampleCount * 2, true);
+
+        for (let index = 0; index < sampleCount; index += 1) {{
+          const envelope = 1 - index / sampleCount;
+          const sample =
+            Math.sin((2 * Math.PI * frequency * index) / sampleRate) * amplitude * envelope;
+          view.setInt16(44 + index * 2, Math.round(sample * 32767), true);
+        }}
+
+        const binary = Array.from(wavBytes, (value) => String.fromCharCode(value)).join("");
+        return "data:audio/wav;base64," + btoa(binary);
+      }}
+
+      async function requestNotificationPermission() {{
+        if (!("Notification" in window)) return;
+        if (Notification.permission !== "default") return;
+        if (notificationPermissionRequested) return;
+        notificationPermissionRequested = true;
+        try {{
+          await Notification.requestPermission();
+        }} catch (error) {{
+          console.error("notification permission request failed:", error);
+        }}
+      }}
+
+      function buildNotificationPreview(message) {{
+        const previewText = (message.content || "").replace(/\s+/g, " ").trim();
+        if (previewText) {{
+          return previewText.length > 100 ? previewText.slice(0, 97) + "..." : previewText;
+        }}
+        if (message.attachments && message.attachments.length) {{
+          return message.attachments.length === 1
+            ? "Sent an attachment."
+            : "Sent " + message.attachments.length + " attachments.";
+        }}
+        return "New message";
+      }}
+
+      function startTitleFlash() {{
+        if (!hasUnreadMessages || titleFlashTimer) return;
+        titleFlashShowingUnread = true;
+        document.title = unreadTitle;
+        titleFlashTimer = window.setInterval(() => {{
+          titleFlashShowingUnread = !titleFlashShowingUnread;
+          document.title = titleFlashShowingUnread ? unreadTitle : originalTitle;
+        }}, 1000);
+      }}
+
+      function clearUnreadState() {{
+        hasUnreadMessages = false;
+        titleFlashShowingUnread = false;
+        if (titleFlashTimer) {{
+          window.clearInterval(titleFlashTimer);
+          titleFlashTimer = 0;
+        }}
+        document.title = originalTitle;
+      }}
+
+      function playNotificationSound() {{
+        const sound = new Audio(notificationSoundDataUri);
+        sound.volume = 0.18;
+        void sound.play().catch((error) => {{
+          console.error("notification sound failed:", error);
+        }});
+      }}
+
+      function showHiddenTabNotification(message) {{
+        if (!("Notification" in window)) return;
+        if (Notification.permission !== "granted") return;
+        const notification = new Notification(AGENT_NAME, {{
+          body: buildNotificationPreview(message),
+          tag: "open-strix-hidden-message",
+          renotify: true,
+          silent: true,
+        }});
+        notification.onclick = () => {{
+          window.focus();
+          notification.close();
+        }};
       }}
 
       function updateFileList() {{
@@ -827,13 +944,25 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
             empty.textContent = "No messages yet. Say something and " + AGENT_NAME + " will respond here.";
             messagesEl.appendChild(empty);
           }}
+          hasCompletedInitialRender = true;
           return;
         }}
         if (emptyEl) emptyEl.remove();
 
+        const newBotMessages = [];
         payload.messages.forEach((message) => {{
+          if (hasCompletedInitialRender && !knownIds.has(message.message_id) && message.is_bot) {{
+            newBotMessages.push(message);
+          }}
           upsertMessageElement(message);
         }});
+
+        if (document.hidden && newBotMessages.length) {{
+          hasUnreadMessages = true;
+          startTitleFlash();
+          playNotificationSound();
+          showHiddenTabNotification(newBotMessages[newBotMessages.length - 1]);
+        }}
 
         if (payload.messages.length && !oldestLoadedId) {{
           oldestLoadedId = payload.messages[0].message_id;
@@ -842,6 +971,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
         if (isNearBottom) {{
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }}
+        hasCompletedInitialRender = true;
       }}
 
       async function loadHistory() {{
@@ -890,6 +1020,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
         if (!text && files.length === 0) {{
           return;
         }}
+        void requestNotificationPermission();
 
         sendEl.disabled = true;
         const body = new FormData();
@@ -956,6 +1087,11 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       }});
       filesEl.addEventListener("change", updateFileList);
       composerEl.addEventListener("submit", sendMessage);
+      document.addEventListener("visibilitychange", () => {{
+        if (!document.hidden) {{
+          clearUnreadState();
+        }}
+      }});
 
       messagesEl.addEventListener("scroll", () => {{
         isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
