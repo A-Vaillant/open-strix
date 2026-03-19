@@ -116,13 +116,22 @@ def _model_for_deep_agents(model_name: str) -> str:
     return f"{DEFAULT_MODEL_PROVIDER}:{cleaned}"
 
 
-def _build_chat_model(model_name: str, *, max_retries: int = DEFAULT_MODEL_MAX_RETRIES) -> Any:
+def _build_chat_model(
+    model_name: str,
+    *,
+    max_retries: int = DEFAULT_MODEL_MAX_RETRIES,
+    model_kwargs: dict[str, Any] | None = None,
+) -> Any:
     # Keep the same OpenAI initialization behavior as deepagents while making
     # provider retries explicit in open-strix config.
     model_init_params: dict[str, Any] = {
         "max_retries": max(0, int(max_retries)),
     }
-    if model_name.startswith("openai:"):
+    if model_kwargs:
+        model_init_params.update(model_kwargs)
+    # Enable Responses API for native OpenAI models, but not for
+    # OpenAI-compatible endpoints (OpenRouter, etc.) that set a custom base_url.
+    if model_name.startswith("openai:") and "base_url" not in model_init_params:
         model_init_params["use_responses_api"] = True
     return init_chat_model(model_name, **model_init_params)
 
@@ -198,7 +207,8 @@ def _humanize_local_web_error(exc: Exception) -> str:
     if "Could not resolve authentication method" in raw:
         return (
             "I couldn't reach the configured model because no API credentials are set. "
-            "Add `ANTHROPIC_API_KEY` to `.env` and set `ANTHROPIC_BASE_URL` if you're not using the default MiniMax endpoint, then try again."
+            "Add the appropriate API key to `.env` (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) "
+            "and set any required base URL, then try again."
         )
     if _is_transient_provider_error(exc):
         request_id = _exception_request_id(exc)
@@ -450,6 +460,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         model = _build_chat_model(
             model_name,
             max_retries=self.config.model_max_retries,
+            model_kwargs=self.config.model_kwargs,
         )
         skills_sources: list[str] = []
         if self.layout.skills_dir.exists():

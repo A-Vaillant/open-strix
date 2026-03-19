@@ -201,6 +201,7 @@ class AppConfig:
     web_ui_host: str = DEFAULT_WEB_UI_HOST
     web_ui_channel_id: str = DEFAULT_WEB_UI_CHANNEL_ID
     folders: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_FOLDERS))
+    model_kwargs: dict[str, Any] = field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
     disable_builtin_skills: set[str] = field(default_factory=set)
     subagents: list[SubAgentConfig] = field(default_factory=list)
@@ -271,6 +272,12 @@ def _parse_subagent_configs(raw: Any) -> list[SubAgentConfig]:
     return configs
 
 
+def _parse_model_kwargs(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): v for k, v in raw.items()}
+
+
 def load_config(layout: RepoLayout) -> AppConfig:
     loaded = yaml.safe_load(layout.config_file.read_text(encoding="utf-8")) or {}
     model_raw = loaded.get("model", DEFAULT_MODEL)
@@ -291,6 +298,7 @@ def load_config(layout: RepoLayout) -> AppConfig:
         web_ui_host=str(loaded.get("web_ui_host", DEFAULT_WEB_UI_HOST)).strip() or DEFAULT_WEB_UI_HOST,
         web_ui_channel_id=str(loaded.get("web_ui_channel_id", DEFAULT_WEB_UI_CHANNEL_ID)).strip()
         or DEFAULT_WEB_UI_CHANNEL_ID,
+        model_kwargs=_parse_model_kwargs(loaded.get("model_kwargs")),
         folders=_parse_folders(loaded.get("folders")),
         mcp_servers=parse_mcp_server_configs(loaded.get("mcp_servers")),
         disable_builtin_skills=_normalize_id_list(loaded.get("disable_builtin_skills")),
