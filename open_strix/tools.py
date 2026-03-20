@@ -1097,6 +1097,62 @@ class ToolsMixin:
             self.log_event("tool_call", tool="lookup", query=query, results=len(results))
             return "\n".join(lines)
 
+        @tool("climb_register")
+        def climb_register(
+            climb_id: str,
+            climb_dir: str,
+            model: str | None = None,
+        ) -> str:
+            """Register and start a new mountaineering climb.
+
+            Args:
+                climb_id: Unique identifier for this climb.
+                climb_dir: Path to the climb directory (must contain program.md,
+                    config.json, eval/, workspace/).
+                model: Optional LangGraph model string (e.g. "anthropic:claude-sonnet-4-6").
+            """
+            from .supervisor import preflight_check
+
+            issues = preflight_check(climb_dir)
+            if issues:
+                self.log_event(
+                    "tool_call_error",
+                    tool="climb_register",
+                    climb_id=climb_id,
+                    error_type="preflight_failed",
+                    issues=issues,
+                )
+                formatted = "\n".join(f"  - {i}" for i in issues)
+                return f"Pre-flight failed for {climb_id}:\n{formatted}"
+
+            # Collect skill dirs so climbers inherit parent agent's skills
+            skill_dirs: list[str] = []
+            if self.layout.skills_dir.exists():
+                skill_dirs.append(str(self.layout.skills_dir))
+
+            self.supervisor.register(
+                climb_id,
+                climb_dir,
+                model=model,
+                skills=skill_dirs or None,
+            )
+            self.log_event("tool_call", tool="climb_register", climb_id=climb_id, climb_dir=climb_dir)
+            return f"Registered and started climb '{climb_id}'."
+
+        @tool("climb_unregister")
+        def climb_unregister(climb_id: str) -> str:
+            """Stop a running climb and remove it from the manifest."""
+            self.supervisor.unregister(climb_id)
+            self.log_event("tool_call", tool="climb_unregister", climb_id=climb_id)
+            return f"Unregistered climb '{climb_id}'."
+
+        @tool("climb_status")
+        def climb_status() -> str:
+            """Get the status of all registered mountaineering climbs."""
+            block = self.supervisor.format_monitoring_block()
+            self.log_event("tool_call", tool="climb_status")
+            return block
+
         send_message.handle_tool_error = True
         list_messages.handle_tool_error = True
         run_shell_tool.handle_tool_error = True
@@ -1118,6 +1174,9 @@ class ToolsMixin:
             add_schedule,
             remove_schedule,
             reload_pollers,
+            climb_register,
+            climb_unregister,
+            climb_status,
         ]
         if self.web_search_enabled:
             web_search.handle_tool_error = True

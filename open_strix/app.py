@@ -53,6 +53,7 @@ from .models import AgentEvent
 from .prompts import DEFAULT_CHECKPOINT, SYSTEM_PROMPT, render_folders_section, render_turn_prompt
 from .readonly_backend import BUILTIN_SKILLS_ROUTE, WriteGuardBackend, build_builtin_skills_backend
 from .scheduler import SchedulerJob, SchedulerMixin
+from .supervisor import Supervisor
 from .tools import (
     SEND_MESSAGE_LOOP_HARD_LIMIT,
     SEND_MESSAGE_LOOP_SIMILARITY_THRESHOLD,
@@ -364,6 +365,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self._send_message_warning_reaction_sent = False
 
         self.phone_book = load_phone_book(self.layout.phone_book_file)
+        self.supervisor = Supervisor(self.layout.state_dir / "climbers")
         self.mcp_manager: MCPManager | None = None
         self.agent = self._create_agent()
 
@@ -918,6 +920,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self.worker_task = asyncio.create_task(self._event_worker())
         self.scheduler.start()
         self._reload_scheduler_jobs()
+        self.supervisor.start_all()
         removed = _cleanup_old_sessions(
             self.layout.sessions_dir,
             self.config.session_log_retention_days,
@@ -971,6 +974,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
 
     async def shutdown(self) -> None:
         self.log_event("app_shutdown_start")
+        self.supervisor.stop_all()
         if self.mcp_manager is not None:
             await self.mcp_manager.shutdown()
         if self.api_runner is not None:
