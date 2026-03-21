@@ -10,7 +10,7 @@ import tempfile
 from uuid import uuid4
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 import discord
@@ -51,8 +51,9 @@ from .discord import (
 )
 from .models import AgentEvent
 from .prompts import DEFAULT_CHECKPOINT, SYSTEM_PROMPT, render_folders_section, render_turn_prompt
-from .readonly_backend import BUILTIN_SKILLS_ROUTE, build_builtin_skills_backend
+from .readonly_backend import BUILTIN_SKILLS_ROUTE, WriteGuardBackend, build_builtin_skills_backend
 from .scheduler import SchedulerJob, SchedulerMixin
+from .supervisor import Supervisor
 from .tools import (
     SEND_MESSAGE_LOOP_HARD_LIMIT,
     SEND_MESSAGE_LOOP_SIMILARITY_THRESHOLD,
@@ -316,78 +317,6 @@ def _cleanup_old_sessions(sessions_dir: Path, retention_days: int) -> int:
     return removed
 
 
-class WriteGuardBackend:
-    def __init__(self, root_dir: Path, writable_dirs: list[str]) -> None:
-        self._fs = FilesystemBackend(root_dir=root_dir, virtual_mode=True)
-        self._writable_roots = [
-            PurePosixPath("/" + d.strip("/")) for d in writable_dirs
-        ]
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._fs, name)
-
-    def _is_write_allowed(self, file_path: str) -> bool:
-        path = PurePosixPath("/" + file_path.lstrip("/"))
-        return any(
-            path == root or root in path.parents
-            for root in self._writable_roots
-        )
-
-    def _allowed_dirs_label(self) -> str:
-        return ", ".join(f"{r}/" for r in self._writable_roots)
-
-    def write(self, file_path: str, content: str) -> WriteResult:
-        if not self._is_write_allowed(file_path):
-            return WriteResult(
-                error=f"Write blocked. Writable directories: {self._allowed_dirs_label()}",
-            )
-        return self._fs.write(file_path=file_path, content=content)
-
-    async def awrite(self, file_path: str, content: str) -> WriteResult:
-        return self.write(file_path=file_path, content=content)
-
-    def edit(
-        self,
-        file_path: str,
-        old_string: str,
-        new_string: str,
-        replace_all: bool = False,
-    ) -> EditResult:
-        if not self._is_write_allowed(file_path):
-            return EditResult(
-                error=f"Edit blocked. Writable directories: {self._allowed_dirs_label()}",
-            )
-        return self._fs.edit(
-            file_path=file_path,
-            old_string=old_string,
-            new_string=new_string,
-            replace_all=replace_all,
-        )
-
-    async def aedit(
-        self,
-        file_path: str,
-        old_string: str,
-        new_string: str,
-        replace_all: bool = False,
-    ) -> EditResult:
-        return self.edit(
-            file_path=file_path,
-            old_string=old_string,
-            new_string=new_string,
-            replace_all=replace_all,
-        )
-
-    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
-        blocked = [path for path, _ in files if not self._is_write_allowed(path)]
-        if blocked:
-            return [FileUploadResponse(path=p, error="permission_denied") for p in blocked]
-        return self._fs.upload_files(files)
-
-    async def aupload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
-        return self.upload_files(files)
-
-
 class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
     def __init__(self, home: Path) -> None:
         self.home = home.resolve()
@@ -436,6 +365,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self._send_message_warning_reaction_sent = False
 
         self.phone_book = load_phone_book(self.layout.phone_book_file)
+        self.supervisor = Supervisor(self.layout.state_dir / "climbers")
         self.mcp_manager: MCPManager | None = None
         self.agent = self._create_agent()
 
@@ -990,6 +920,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self.worker_task = asyncio.create_task(self._event_worker())
         self.scheduler.start()
         self._reload_scheduler_jobs()
+        self.supervisor.start_all()
         removed = _cleanup_old_sessions(
             self.layout.sessions_dir,
             self.config.session_log_retention_days,
@@ -1043,6 +974,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
 
     async def shutdown(self) -> None:
         self.log_event("app_shutdown_start")
+        self.supervisor.stop_all()
         if self.mcp_manager is not None:
             await self.mcp_manager.shutdown()
         if self.api_runner is not None:
