@@ -17,27 +17,21 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# Activate venv if it exists
-if [ -f ".venv/bin/activate" ]; then
-    source .venv/bin/activate
-fi
+# Ensure uv is on PATH (may not be in git hook environment)
+export PATH="$HOME/.local/bin:$PATH"
 
 echo "=== pre-commit: pyright (advisory, skipped if low memory) ==="
-if command -v pyright &> /dev/null; then
-    # pyright is a Node.js tool that OOMs on <2GB servers
-    MEM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
-    if [ "$MEM_MB" -gt 2000 ]; then
-        pyright open_strix/ || echo "⚠️  pyright reported errors (advisory, not blocking)"
-    else
-        echo "⚠️  ${MEM_MB}MB RAM — skipping pyright (needs >2GB)"
-    fi
+# pyright is a Node.js tool that OOMs on <2GB servers
+MEM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
+if [ "$MEM_MB" -gt 2000 ]; then
+    uv run pyright open_strix/ || echo "⚠️  pyright reported errors (advisory, not blocking)"
 else
-    echo "⚠️  pyright not installed, skipping type check"
+    echo "⚠️  ${MEM_MB}MB RAM — skipping pyright (needs >2GB)"
 fi
 
 echo "=== pre-commit: pytest ==="
 # --ignore tests that require external tools (uv) or have pre-existing failures
-python -m pytest tests/ -x -q \
+uv run pytest tests/ -x -q \
     --ignore=tests/test_onboarding_flow.py \
     --ignore=tests/test_tools_registration.py \
     || {
