@@ -147,6 +147,11 @@ For specific debugging workflows, read these files:
   Covers: response rate tracking, cross-platform routing audit, model change
   before/after comparison, silence rate trends, topic engagement shifts
 
+- **Watchers and algedonic signals?** → Read `/.open_strix_builtin_skills/introspection/debugging-watchers.md`
+  Covers: watchers.json format, event triggers (turn_complete, session_start,
+  session_end), input/output contracts, routing, anti-pattern catalog, writing
+  custom watchers. Example watchers in `watcher-examples/`.
+
 - **Identity or operational drift?** → Read `/.open_strix_builtin_skills/onboarding/SKILL.md`
   Recovery from drift is structurally the same as onboarding. If introspection reveals
   stale blocks, broken schedules, or behavior that doesn't match your persona, the

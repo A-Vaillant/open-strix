@@ -1,9 +1,4 @@
----
-name: algedonic-signals
-description: Understand and implement watchers — event-triggered monitoring hooks that detect behavioral drift, agreement violations, and operational anomalies. Use when the user wants to monitor agent behavior, detect drift patterns, set up turn_complete hooks, or understand the watchers.json system.
----
-
-# Algedonic Signals — Behavioral Monitoring via Watchers
+# Watchers — Behavioral Monitoring via Algedonic Signals
 
 Algedonic signals bypass the management hierarchy to report pain/pleasure directly
 to the operator. In Stafford Beer's Viable System Model, they are the channel that
@@ -15,9 +10,8 @@ or choose to ignore.**
 
 ## The Watcher System
 
-Watchers are the infrastructure for algedonic signals. They extend the existing
-poller framework with event triggers — a watcher can fire on a cron schedule
-(like a poller) **or** on an agent event (like `turn_complete`).
+Watchers extend the existing poller framework with event triggers — a watcher can
+fire on a cron schedule (like a poller) **or** on an agent event (like `turn_complete`).
 
 ### watchers.json
 
@@ -108,12 +102,12 @@ Plus custom env vars from the `env` field and the agent's existing environment.
 
 ## Backward Compatibility
 
-`pollers.json` files continue to work exactly as before. The `watchers.json` format
-is an extension, not a replacement. Skills can use either or both.
+`pollers.json` files continue to work. The `watchers.json` format is the preferred
+way to declare both scheduled and event-triggered monitors going forward.
 
 ## Anti-Pattern Catalog
 
-These are documented cases where agent monitoring would have caught problems earlier:
+Documented cases where agent monitoring would have caught problems earlier:
 
 | Anti-Pattern | Detection Shape | Watcher Type |
 |---|---|---|
@@ -141,7 +135,7 @@ Use both. Watchers for detection, in-process hooks for prevention.
 
 ## Writing a Watcher
 
-See `examples/` in this skill directory for complete working examples.
+See `watcher-examples/` in this skill directory for complete working examples.
 
 The simplest useful watcher:
 

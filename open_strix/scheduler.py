@@ -35,28 +35,17 @@ class SchedulerJob:
         return data
 
 
-@dataclass
-class PollerConfig:
-    """A poller declared in a skill's pollers.json."""
-
-    name: str
-    command: str
-    cron: str
-    env: dict[str, str]
-    skill_dir: Path
-
-
 # Valid event triggers for watchers (non-cron).
 VALID_WATCHER_TRIGGERS = frozenset({"turn_complete", "session_start", "session_end"})
 
 
 @dataclass
 class WatcherConfig:
-    """A watcher declared in a skill's watchers.json.
+    """Unified config for cron-triggered pollers and event-triggered hooks.
 
-    Watchers unify cron-triggered pollers and event-triggered hooks under
-    one file format and subprocess/JSONL contract.  A watcher has *either*
-    a ``cron`` schedule or an event ``trigger`` — never both.
+    A watcher has *either* a ``cron`` schedule or an event ``trigger`` —
+    never both.  Legacy ``pollers.json`` entries are loaded as watchers
+    with ``trigger=None``.
     """
 
     name: str
@@ -107,9 +96,13 @@ class SchedulerMixin:
             encoding="utf-8",
         )
 
-    def _discover_pollers(self) -> list[PollerConfig]:
-        """Scan skill directories for pollers.json files."""
-        pollers: list[PollerConfig] = []
+    def _discover_pollers(self) -> list[WatcherConfig]:
+        """Scan skill directories for legacy pollers.json files.
+
+        Returns WatcherConfig instances with ``trigger=None`` for backward
+        compatibility.  New skills should use ``watchers.json`` instead.
+        """
+        pollers: list[WatcherConfig] = []
         skills_dir = self.layout.skills_dir
         if not skills_dir.exists():
             return pollers
@@ -160,10 +153,11 @@ class SchedulerMixin:
                 if not isinstance(env, dict):
                     env = {}
                 pollers.append(
-                    PollerConfig(
+                    WatcherConfig(
                         name=name,
                         command=command,
                         cron=cron,
+                        trigger=None,
                         env={str(k): str(v) for k, v in env.items()},
                         skill_dir=skill_dir,
                     ),
@@ -380,7 +374,7 @@ class SchedulerMixin:
             ),
         )
 
-    async def _on_poller_fire(self, poller: PollerConfig) -> None:
+    async def _on_poller_fire(self, poller: WatcherConfig) -> None:
         """Run a poller subprocess and enqueue events from its stdout."""
         env = {**os.environ, **poller.env}
         env["STATE_DIR"] = str(poller.skill_dir)
@@ -482,14 +476,7 @@ class SchedulerMixin:
 
     async def _on_watcher_cron_fire(self, watcher: WatcherConfig) -> None:
         """Run a cron-based watcher — same execution model as pollers."""
-        poller = PollerConfig(
-            name=watcher.name,
-            command=watcher.command,
-            cron=watcher.cron or "",
-            env=watcher.env,
-            skill_dir=watcher.skill_dir,
-        )
-        await self._on_poller_fire(poller)
+        await self._on_poller_fire(watcher)
 
     async def _run_watcher_subprocess(
         self,
