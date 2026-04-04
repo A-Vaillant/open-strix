@@ -1,4 +1,4 @@
-"""Tests for YAML block hardening: defensive loading + path guards on write/edit tools."""
+"""Tests for YAML block hardening: defensive loading + post-turn validation."""
 
 from __future__ import annotations
 
@@ -69,3 +69,69 @@ class TestDefensiveBlockLoading:
         blocks = app._load_memory_blocks()
         names = [b["name"] for b in blocks]
         assert names == ["alpha", "beta"]
+
+
+class TestPostTurnBlockValidation:
+    """_validate_memory_blocks detects corrupt blocks for agent self-correction."""
+
+    def test_all_healthy_returns_empty(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path)
+        blocks_dir = app.layout.blocks_dir
+
+        blocks_dir.mkdir(parents=True, exist_ok=True)
+        (blocks_dir / "good.yaml").write_text(
+            yaml.safe_dump({"name": "good", "text": "works", "sort_order": 0}),
+            encoding="utf-8",
+        )
+
+        errors = app._validate_memory_blocks()
+        assert errors == []
+
+    def test_corrupt_block_detected(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path)
+        blocks_dir = app.layout.blocks_dir
+
+        (blocks_dir / "good.yaml").write_text(
+            yaml.safe_dump({"name": "good", "text": "works", "sort_order": 0}),
+            encoding="utf-8",
+        )
+        (blocks_dir / "bad.yaml").write_text(
+            "value: 'unterminated string\n  broken: yaml: [",
+            encoding="utf-8",
+        )
+
+        errors = app._validate_memory_blocks()
+        assert len(errors) == 1
+        assert "bad.yaml" in errors[0]
+
+    def test_non_dict_block_detected(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path)
+        blocks_dir = app.layout.blocks_dir
+
+        (blocks_dir / "listblock.yaml").write_text("- item1\n- item2\n", encoding="utf-8")
+
+        errors = app._validate_memory_blocks()
+        error_text = "\n".join(errors)
+        assert "listblock.yaml" in error_text
+        assert "mapping" in error_text
+
+    def test_multiple_corrupt_blocks(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path)
+        blocks_dir = app.layout.blocks_dir
+
+        # Remove default init block
+        for f in blocks_dir.glob("*.yaml"):
+            f.unlink()
+
+        (blocks_dir / "bad1.yaml").write_text("': broken", encoding="utf-8")
+        (blocks_dir / "bad2.yaml").write_text("- not a dict\n", encoding="utf-8")
+        (blocks_dir / "good.yaml").write_text(
+            yaml.safe_dump({"name": "good", "text": "ok", "sort_order": 0}),
+            encoding="utf-8",
+        )
+
+        errors = app._validate_memory_blocks()
+        assert len(errors) == 2
+        filenames = [e.split(":")[0] for e in errors]
+        assert "bad1.yaml" in filenames
+        assert "bad2.yaml" in filenames
