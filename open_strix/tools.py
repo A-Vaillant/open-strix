@@ -407,8 +407,10 @@ class ToolsMixin:
                         reacted=hard_stop_reacted,
                     )
                     raise SendMessageCircuitBreakerStop(
-                        "send_message hard stop: detected repeated near-duplicate loop. "
-                        "Turn terminated at streak=10 for safety.",
+                        "send_message hard stop: repeated near-duplicate loop at streak=10. "
+                        "This turn is terminated for safety. Next turn: reflect on what went "
+                        "wrong before resuming — consider using 5 Whys or a completely "
+                        "different approach instead of retrying.",
                     )
 
                 self.log_event(
@@ -421,8 +423,14 @@ class ToolsMixin:
                 )
                 return (
                     "Loop detected in send_message calls. Message delivery is paused for this turn "
-                    "to prevent an infinite output loop. Stop repeating similar messages immediately, "
-                    "change strategy, and finish the turn safely."
+                    "to prevent an infinite output loop.\n\n"
+                    "Before retrying, reflect:\n"
+                    "1. What were you trying to accomplish? Did the approach work?\n"
+                    "2. What is a COMPLETELY DIFFERENT way to achieve this?\n"
+                    "3. If you have a 5 Whys or root-cause analysis skill, use it on why "
+                    "this approach failed before trying again.\n\n"
+                    "Do not retry the same action. Think creatively about an alternative, "
+                    "or finish the turn safely."
                 )
 
             sent, sent_message_id, sent_chunks = await self._send_channel_message(
