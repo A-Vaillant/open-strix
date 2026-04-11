@@ -10,8 +10,10 @@ import open_strix.app as app_mod
 from open_strix.phone_book import (
     PhoneBook,
     PhoneBookEntry,
+    enrich_from_jsonl,
     load_phone_book,
     populate_from_guilds,
+    render_aliases_block,
     save_phone_book,
     update_from_message,
 )
@@ -442,3 +444,218 @@ def test_phone_book_extra_not_overwritten(
     # Create app again (simulates restart)
     app_mod.OpenStrixApp(tmp_path)
     assert extra_path.read_text(encoding="utf-8") == "My custom notes"
+
+
+# ------------------------------------------------------------------
+# JSONL enrichment tests
+# ------------------------------------------------------------------
+
+
+def test_enrich_from_jsonl_merges_aliases(tmp_path: Path) -> None:
+    """JSONL enrichment adds cross-platform aliases to existing entries."""
+    book = PhoneBook()
+    book.add(PhoneBookEntry(id="123", name="alice", kind="user"))
+
+    people = tmp_path / "people.jsonl"
+    people.write_text(
+        '{"name": "Alice Smith", "discord_id": "123", "bluesky": "@alice.bsky.social", "discord_display": "alice"}\n',
+        encoding="utf-8",
+    )
+    channels = tmp_path / "channels.jsonl"
+
+    enrich_from_jsonl(book, people, channels)
+
+    entry = book.entries["123"]
+    assert entry.aliases["Bluesky"] == "@alice.bsky.social"
+    assert entry.aliases["Discord"] == "alice"
+
+
+def test_enrich_from_jsonl_creates_new_entries(tmp_path: Path) -> None:
+    """JSONL creates entries for people not yet in the phone book."""
+    book = PhoneBook()
+
+    people = tmp_path / "people.jsonl"
+    people.write_text(
+        '{"name": "Bob", "discord_id": "456", "bluesky": "@bob.bsky.social"}\n',
+        encoding="utf-8",
+    )
+    channels = tmp_path / "channels.jsonl"
+
+    enrich_from_jsonl(book, people, channels)
+
+    assert "456" in book.entries
+    assert book.entries["456"].name == "Bob"
+    assert book.entries["456"].aliases["Bluesky"] == "@bob.bsky.social"
+
+
+def test_enrich_from_jsonl_channels(tmp_path: Path) -> None:
+    """JSONL channel enrichment adds aliases to channels."""
+    book = PhoneBook()
+    book.add(PhoneBookEntry(id="999", name="general", kind="channel"))
+
+    people = tmp_path / "people.jsonl"
+    channels = tmp_path / "channels.jsonl"
+    channels.write_text(
+        '{"name": "General Chat", "discord_id": "999", "aliases": ["main", "general", "home"]}\n',
+        encoding="utf-8",
+    )
+
+    enrich_from_jsonl(book, people, channels)
+
+    entry = book.entries["999"]
+    assert "aka" in entry.aliases
+    assert "main" in entry.aliases["aka"]
+    assert "general" in entry.aliases["aka"]
+
+
+def test_enrich_from_jsonl_missing_files(tmp_path: Path) -> None:
+    """Enrichment with missing files is a no-op."""
+    book = PhoneBook()
+    book.add(PhoneBookEntry(id="123", name="alice", kind="user"))
+
+    enrich_from_jsonl(
+        book,
+        tmp_path / "nonexistent_people.jsonl",
+        tmp_path / "nonexistent_channels.jsonl",
+    )
+
+    # Book unchanged
+    assert len(book.entries) == 1
+    assert book.entries["123"].aliases == {}
+
+
+def test_enrich_from_jsonl_bot_type(tmp_path: Path) -> None:
+    """JSONL entries with type=bot are marked as bots."""
+    book = PhoneBook()
+
+    people = tmp_path / "people.jsonl"
+    people.write_text(
+        '{"name": "Strix", "discord_id": "789", "type": "bot"}\n',
+        encoding="utf-8",
+    )
+    channels = tmp_path / "channels.jsonl"
+
+    enrich_from_jsonl(book, people, channels)
+
+    assert book.entries["789"].is_bot is True
+
+
+# ------------------------------------------------------------------
+# Aliases block rendering tests
+# ------------------------------------------------------------------
+
+
+def test_render_aliases_block_empty() -> None:
+    """Empty phone book renders empty string."""
+    book = PhoneBook()
+    assert render_aliases_block(book) == ""
+
+
+def test_render_aliases_block_users_and_channels() -> None:
+    """Aliases block includes both people and channels sections."""
+    book = PhoneBook()
+    book.add(PhoneBookEntry(
+        id="123", name="Alice", kind="user",
+        aliases={"Discord": "alice", "Bluesky": "@alice.bsky.social"},
+    ))
+    book.add(PhoneBookEntry(
+        id="999", name="general", kind="channel",
+        aliases={"aka": "main, home"},
+    ))
+
+    block = render_aliases_block(book)
+    assert "[PEOPLE" in block
+    assert "[CHANNELS" in block
+    assert "Alice" in block
+    assert "@alice.bsky.social" in block
+    assert "general" in block
+    assert "main, home" in block
+
+
+def test_render_aliases_block_bot_tag() -> None:
+    """Bot entries get a [bot] tag in the aliases block."""
+    book = PhoneBook()
+    book.add(PhoneBookEntry(
+        id="789", name="Strix", kind="user", is_bot=True,
+        aliases={"Bluesky": "@strix.example"},
+    ))
+
+    block = render_aliases_block(book)
+    assert "[bot]" in block
+    assert "Strix" in block
+
+
+# ------------------------------------------------------------------
+# Layout property tests for JSONL paths
+# ------------------------------------------------------------------
+
+
+def test_people_jsonl_in_layout() -> None:
+    from open_strix.config import RepoLayout
+
+    layout = RepoLayout(home=Path("/fake"), state_dir_name="state")
+    assert layout.people_jsonl == Path("/fake/state/people.jsonl")
+
+
+def test_channels_jsonl_in_layout() -> None:
+    from open_strix.config import RepoLayout
+
+    layout = RepoLayout(home=Path("/fake"), state_dir_name="state")
+    assert layout.channels_jsonl == Path("/fake/state/channels.jsonl")
+
+
+# ------------------------------------------------------------------
+# App integration tests for JSONL enrichment
+# ------------------------------------------------------------------
+
+
+def test_app_loads_jsonl_enrichment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """App loads JSONL enrichment at startup and merges into phone book."""
+    _stub_agent_factory(monkeypatch)
+
+    # Pre-populate phone book + JSONL
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    book = PhoneBook()
+    book.add(PhoneBookEntry(id="123", name="alice", kind="user"))
+    save_phone_book(book, state_dir / "phone-book.md")
+
+    (state_dir / "people.jsonl").write_text(
+        '{"name": "Alice Smith", "discord_id": "123", "bluesky": "@alice.bsky.social"}\n',
+        encoding="utf-8",
+    )
+
+    app = app_mod.OpenStrixApp(tmp_path)
+    assert app.phone_book.entries["123"].aliases.get("Bluesky") == "@alice.bsky.social"
+
+
+def test_render_turn_prompt_includes_aliases() -> None:
+    """render_turn_prompt includes aliases block when provided."""
+    from open_strix.prompts import render_turn_prompt
+
+    result = render_turn_prompt(
+        journal_entries=[],
+        memory_blocks=[],
+        recent_messages=[],
+        current_event={"event_type": "message", "prompt": "hello"},
+        aliases_block="[PEOPLE]\n- Alice (ID: 123)",
+    )
+    assert "[PEOPLE]" in result
+    assert "Alice" in result
+    assert "Known people and channels" in result
+
+
+def test_render_turn_prompt_omits_aliases_when_empty() -> None:
+    """render_turn_prompt skips aliases section when block is empty."""
+    from open_strix.prompts import render_turn_prompt
+
+    result = render_turn_prompt(
+        journal_entries=[],
+        memory_blocks=[],
+        recent_messages=[],
+        current_event={"event_type": "message", "prompt": "hello"},
+    )
+    assert "Known people and channels" not in result

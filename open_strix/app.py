@@ -42,7 +42,7 @@ from .config import (
     load_config,
 )
 from .mcp_client import MCPManager
-from .phone_book import load_phone_book
+from .phone_book import enrich_from_jsonl, load_phone_book, render_aliases_block
 from .discord import (
     DISCORD_HISTORY_REFRESH_LIMIT,
     DISCORD_MESSAGE_CHAR_LIMIT,
@@ -373,6 +373,9 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self._last_turn_failure: str | None = None
 
         self.phone_book = load_phone_book(self.layout.phone_book_file)
+        enrich_from_jsonl(
+            self.phone_book, self.layout.people_jsonl, self.layout.channels_jsonl,
+        )
         self.supervisor = Supervisor(self.layout.state_dir / "climbers")
         self._draining = False
         self.mcp_manager: MCPManager | None = None
@@ -732,6 +735,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                 "source_platform": event.source_platform,
             },
             last_turn_failure=self._last_turn_failure,
+            aliases_block=render_aliases_block(self.phone_book),
         )
 
     def _load_blocks_for_prompt(self) -> list[dict[str, Any]]:

@@ -37,6 +37,7 @@ Communication:
 - In 1-1 DMs, you should *ALWAYS* acknowledge a message, either by reacting or replying via `send_message`.
 - Pay attention to which conversation is happening in which room or local web chat, and use channel IDs correctly.
 - Use the `lookup` tool to find user IDs and channel IDs by name. To mention someone: `<@USER_ID>`. The phone book at `state/phone-book.md` lists all known users and channels. For manual notes about channels, people, and external comms, see `state/phone-book.extra.md`.
+- Cross-platform aliases (Bluesky, email, etc.) can be added to `state/people.jsonl` and `state/channels.jsonl`. These are included in every turn prompt so you always know who is who across platforms.
 
 Memory:
 - Memory blocks define who you are and your operational parameters. They're highly visible to you.
@@ -284,6 +285,7 @@ def render_turn_prompt(
     recent_messages: list[dict[str, Any]],
     current_event: Mapping[str, Any],
     last_turn_failure: str | None = None,
+    aliases_block: str = "",
 ) -> str:
     journals = render_journal_entries(journal_entries)
     blocks_text = render_memory_blocks(memory_blocks)
@@ -295,6 +297,19 @@ def render_turn_prompt(
     if last_turn_failure:
         failure_section = f"""
         6) Previous turn failure:
+        {last_turn_failure}
+        """
+
+    aliases_section = ""
+    if aliases_block:
+        aliases_section = f"""
+        6) Known people and channels:
+        {aliases_block}
+        """
+        # Renumber failure section if both present
+        if failure_section:
+            failure_section = f"""
+        7) Previous turn failure:
         {last_turn_failure}
         """
 
@@ -318,5 +333,5 @@ def render_turn_prompt(
         {current_event_text}
 
         If you need to message the user, call send_message.
-        {failure_section}"""
+        {aliases_section}{failure_section}"""
     )
