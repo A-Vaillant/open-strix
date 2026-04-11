@@ -48,11 +48,8 @@ cargo --version
 **⚠️ Tell your operator:** Compilation can take 10-20 minutes and may slow their
 machine significantly. They should avoid running heavy tasks during the install.
 
-Chainlink's upstream PR for typed relations (tkellogg/chainlink#20) is not yet merged.
-Install from Tim's fork:
-
 ```bash
-cargo install --git https://github.com/tkellogg/chainlink.git chainlink-tracker
+cargo install --git https://github.com/dollspace-gay/chainlink.git chainlink-tracker
 ```
 
 This compiles from source. On resource-constrained machines (< 2GB RAM), it may be
@@ -60,10 +57,8 @@ slow or fail. If it fails with an OOM:
 
 ```bash
 # Reduce parallel compilation
-CARGO_BUILD_JOBS=1 cargo install --git https://github.com/tkellogg/chainlink.git chainlink-tracker
+CARGO_BUILD_JOBS=1 cargo install --git https://github.com/dollspace-gay/chainlink.git chainlink-tracker
 ```
-
-If the upstream PR gets merged, you can switch to `cargo install chainlink-tracker`.
 
 Verify:
 ```bash
