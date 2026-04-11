@@ -135,6 +135,14 @@ class RepoLayout:
         return self.state_dir / "phone-book.extra.md"
 
     @property
+    def people_jsonl(self) -> Path:
+        return self.state_dir / "people.jsonl"
+
+    @property
+    def channels_jsonl(self) -> Path:
+        return self.state_dir / "channels.jsonl"
+
+    @property
     def blocks_dir(self) -> Path:
         return self.home / "blocks"
 
