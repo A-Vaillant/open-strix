@@ -11,7 +11,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool, ToolException
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 
 @dataclass
@@ -175,17 +175,13 @@ def _build_args_schema(
                 Field(default=None, description=prop_desc),
             )
 
-    # Create the model dynamically.  If there are no properties the tool
-    # takes no arguments — return an empty model so LangChain still gets
-    # a concrete schema instead of inferring **kwargs.
+    # Create the model dynamically via pydantic's create_model().  If there
+    # are no properties the tool takes no arguments — return an empty model
+    # so LangChain still gets a concrete schema instead of inferring **kwargs.
     model_name = "".join(
         part.capitalize() for part in tool_name.replace("-", "_").split("_")
     ) + "Input"
-    model: type[BaseModel] = type(model_name, (BaseModel,), {
-        "__annotations__": {k: v[0] for k, v in field_definitions.items()},
-        **{k: v[1] for k, v in field_definitions.items()},
-    })
-    return model
+    return create_model(model_name, **field_definitions)  # type: ignore[call-overload]
 
 
 def _bridge_mcp_tool(
