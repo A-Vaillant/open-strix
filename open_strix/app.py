@@ -57,6 +57,7 @@ from .prompts import DEFAULT_CHECKPOINT, SYSTEM_PROMPT, render_folders_section, 
 from .readonly_backend import BUILTIN_SKILLS_ROUTE, LoggingWriteGuardBackend, build_builtin_skills_backend
 from .scheduler import SchedulerJob, SchedulerMixin
 from .supervisor import Supervisor
+from .tool_indicators import ToolIndicatorHandler
 from .tools import (
     SEND_MESSAGE_LOOP_HARD_LIMIT,
     SEND_MESSAGE_LOOP_SIMILARITY_THRESHOLD,
@@ -839,6 +840,50 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                 errors.append(f"{path.name}: expected a YAML mapping, got {type(loaded).__name__}")
         return errors
 
+    async def _send_tool_indicator(self, channel_id: str, text: str) -> None:
+        """Fire-and-forget tiny indicator to a Discord channel.
+        Bypasses conversation memory so these don't pollute her prompt context."""
+        if self.discord_client is None or not self.discord_client.is_ready():
+            return
+        try:
+            channel_int = int(channel_id)
+        except ValueError:
+            return
+        channel = self.discord_client.get_channel(channel_int)
+        if channel is None:
+            try:
+                channel = await self.discord_client.fetch_channel(channel_int)
+            except Exception:
+                return
+        if not isinstance(channel, discord.abc.Messageable):
+            return
+        await channel.send(text[:200])
+
+    def _build_tool_indicator_handler(
+        self, event: AgentEvent
+    ) -> ToolIndicatorHandler | None:
+        cfg = self.config.tool_indicators
+        if not cfg.enabled:
+            return None
+        channel_id = event.channel_id
+        if not channel_id or self.is_local_web_channel(channel_id):
+            return None
+        if cfg.dm_only and event.channel_conversation_type != "dm":
+            return None
+
+        async def _send(text: str) -> None:
+            await self._send_tool_indicator(str(channel_id), text)
+
+        def _on_error(text: str, exc: Exception) -> None:
+            self.log_event(
+                "tool_indicator_send_failed",
+                channel_id=channel_id,
+                text=text,
+                error=repr(exc),
+            )
+
+        return ToolIndicatorHandler(cfg, _send, _on_error)
+
     async def _process_event(self, event: AgentEvent) -> None:
         self._current_turn_sent_messages = []
         self._reset_send_message_circuit_breaker()
@@ -849,9 +894,16 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
             channel_id=event.channel_id,
             scheduler_name=event.scheduler_name,
         )
+        indicator_handler = self._build_tool_indicator_handler(event)
+        invoke_kwargs: dict[str, Any] = {}
+        if indicator_handler is not None:
+            invoke_kwargs["config"] = {"callbacks": [indicator_handler]}
         try:
             async with self._typing_indicator(event):
-                result = await self.agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
+                result = await self.agent.ainvoke(
+                    {"messages": [HumanMessage(content=prompt)]},
+                    **invoke_kwargs,
+                )
             self._log_agent_trace(result)
             self._write_session_log(event, prompt, result)
 
@@ -880,7 +932,8 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                 )
                 async with self._typing_indicator(event):
                     result = await self.agent.ainvoke(
-                        {"messages": [HumanMessage(content=repair_prompt)]}
+                        {"messages": [HumanMessage(content=repair_prompt)]},
+                        **invoke_kwargs,
                     )
                 self._log_agent_trace(result)
                 # Check again — log but don't loop
@@ -893,6 +946,11 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
 
             await self._run_post_turn_git_sync(event)
         finally:
+            if indicator_handler is not None:
+                try:
+                    await indicator_handler.close()
+                except Exception:
+                    pass
             self._reset_send_message_circuit_breaker()
             self._current_turn_sent_messages = None
 

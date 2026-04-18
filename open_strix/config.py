@@ -8,6 +8,7 @@ import yaml
 
 from .builtin_skills import BUILTIN_HOME_DIRNAME, sync_builtin_skills_home
 from .mcp_client import MCPServerConfig, parse_mcp_server_configs
+from .tool_indicators import DEFAULT_EXCLUDE_TOOLS, ToolIndicatorsConfig
 
 DEFAULT_MODEL = "MiniMax-M2.5"
 DEFAULT_MODEL_PROVIDER = "anthropic"
@@ -219,6 +220,7 @@ class AppConfig:
     mcp_servers: list[MCPServerConfig] = field(default_factory=list)
     disable_builtin_skills: set[str] = field(default_factory=set)
     subagents: list[SubAgentConfig] = field(default_factory=list)
+    tool_indicators: ToolIndicatorsConfig = field(default_factory=ToolIndicatorsConfig)
 
     @property
     def writable_dirs(self) -> list[str]:
@@ -263,6 +265,31 @@ def _parse_folders(raw: Any) -> dict[str, str]:
         if name_str:
             folders[name_str] = mode_str
     return folders if folders else dict(DEFAULT_FOLDERS)
+
+
+def _parse_tool_indicators(raw: Any) -> ToolIndicatorsConfig:
+    if not isinstance(raw, dict):
+        return ToolIndicatorsConfig()
+
+    def _str_list(value: Any, default: list[str] | None = None) -> list[str]:
+        if value is None:
+            return list(default) if default is not None else []
+        if isinstance(value, str):
+            items = [item.strip() for item in value.split(",")]
+            return [item for item in items if item]
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return list(default) if default is not None else []
+
+    exclude_default = list(DEFAULT_EXCLUDE_TOOLS)
+    return ToolIndicatorsConfig(
+        enabled=bool(raw.get("enabled", False)),
+        dm_only=bool(raw.get("dm_only", True)),
+        include_tools=_str_list(raw.get("include_tools"), []),
+        exclude_tools=_str_list(raw.get("exclude_tools"), exclude_default),
+        batch_window_ms=max(0, int(raw.get("batch_window_ms", 1500))),
+        arg_hints=bool(raw.get("arg_hints", True)),
+    )
 
 
 def _parse_subagent_configs(raw: Any) -> list[SubAgentConfig]:
@@ -310,6 +337,7 @@ def load_config(layout: RepoLayout) -> AppConfig:
         mcp_servers=parse_mcp_server_configs(loaded.get("mcp_servers")),
         disable_builtin_skills=_normalize_id_list(loaded.get("disable_builtin_skills")),
         subagents=_parse_subagent_configs(loaded.get("subagents")),
+        tool_indicators=_parse_tool_indicators(loaded.get("tool_indicators")),
     )
 
 
