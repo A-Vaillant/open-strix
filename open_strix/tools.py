@@ -1095,26 +1095,20 @@ class ToolsMixin:
 
         @tool("journal")
         def journal(user_wanted: str, agent_did: str, predictions: str) -> str:
-            """Write a journal entry and return checkpoint guidance."""
+            """Write a journal entry."""
             self.append_journal(
                 user_wanted=user_wanted,
                 agent_did=agent_did,
                 predictions=predictions,
                 channel_id=self.current_channel_id,
             )
-            checkpoint = self.layout.checkpoint_file.read_text(encoding="utf-8")
             self.log_event("tool_call", tool="journal")
             self.log_event(
                 "file_write",
                 tool="journal",
                 file_path=str(self.layout.journal_log),
             )
-            self.log_event(
-                "file_read",
-                tool="journal",
-                file_path=str(self.layout.checkpoint_file),
-            )
-            return checkpoint
+            return "Journal entry saved."
 
         @tool("react")
         async def react(
