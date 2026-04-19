@@ -84,17 +84,25 @@ class TestArgHintFor:
 
 class TestFormatEntry:
     def test_known_tool_with_hint(self) -> None:
-        assert format_entry("write_file", "notes.md", True) == "✍️ write_file (notes.md)"
+        entry = format_entry("write_file", "notes.md", True)
+        assert entry.startswith("✍️ ")
+        assert entry.endswith(" (notes.md)")
+        assert "~" in entry
 
     def test_known_tool_hint_disabled(self) -> None:
-        assert format_entry("write_file", "notes.md", False) == "✍️ write_file"
+        entry = format_entry("write_file", "notes.md", False)
+        assert entry.startswith("✍️ ")
+        assert entry.endswith("~")
+        assert "(" not in entry
 
     def test_known_tool_without_hint(self) -> None:
-        assert format_entry("read_file", None, True) == "🔍 read_file"
+        entry = format_entry("read_file", None, True)
+        assert entry.startswith("🔍 ")
+        assert entry.endswith("~")
 
     def test_unknown_tool_uses_default_emoji(self) -> None:
-        assert format_entry("mystery", None, True) == "🔧 mystery"
-        assert format_entry("mystery", "foo", True) == "🔧 mystery (foo)"
+        assert format_entry("mystery", None, True) == "🔧 mystery~"
+        assert format_entry("mystery", "foo", True) == "🔧 mystery~ (foo)"
 
 
 class TestParseToolIndicators:
@@ -202,7 +210,9 @@ class TestToolIndicatorHandler:
             inputs={"file_path": "/x/notes.md"},
         )
         await h.close()
-        assert sent == ["✍️ write_file (notes.md)"]
+        assert len(sent) == 1
+        assert sent[0].startswith("✍️ ")
+        assert sent[0].endswith(" (notes.md)")
 
     @pytest.mark.asyncio
     async def test_multiple_tools_coalesce(self) -> None:
@@ -214,9 +224,9 @@ class TestToolIndicatorHandler:
         await h.on_tool_start({"name": "bash"}, "", inputs={"command": "ls"})
         await h.close()
         assert len(sent) == 1
-        assert "✍️ write_file (a.md)" in sent[0]
-        assert "🔍 read_file (b.md)" in sent[0]
-        assert "⚙️ bash (ls)" in sent[0]
+        assert "✍️" in sent[0] and "(a.md)" in sent[0]
+        assert "🔍" in sent[0] and "(b.md)" in sent[0]
+        assert "⚙️" in sent[0] and "(ls)" in sent[0]
         assert " · " in sent[0]
 
     @pytest.mark.asyncio
@@ -230,8 +240,8 @@ class TestToolIndicatorHandler:
         await h.close()
         # first batch should have flushed on its own; second flushes on close
         assert len(sent) == 2
-        assert "write_file" in sent[0]
-        assert "read_file" in sent[1]
+        assert "✍️" in sent[0] and "(a.md)" in sent[0]
+        assert "🔍" in sent[1] and "(b.md)" in sent[1]
 
     @pytest.mark.asyncio
     async def test_excluded_tool_skipped(self) -> None:
@@ -251,8 +261,8 @@ class TestToolIndicatorHandler:
         await h.on_tool_start({"name": "write_file"}, "", inputs={"file_path": "a.md"})
         await h.close()
         assert len(sent) == 1
-        assert "bash" in sent[0]
-        assert "write_file" not in sent[0]
+        assert "⚙️" in sent[0] and "(ls)" in sent[0]
+        assert "✍️" not in sent[0]
 
     @pytest.mark.asyncio
     async def test_arg_hints_disabled(self) -> None:
@@ -261,7 +271,10 @@ class TestToolIndicatorHandler:
         h = _make_handler(cfg, sent)
         await h.on_tool_start({"name": "write_file"}, "", inputs={"file_path": "a.md"})
         await h.close()
-        assert sent == ["✍️ write_file"]
+        assert len(sent) == 1
+        assert sent[0].startswith("✍️ ")
+        assert sent[0].endswith("~")
+        assert "(" not in sent[0]
 
     @pytest.mark.asyncio
     async def test_send_error_is_reported(self) -> None:
@@ -282,7 +295,7 @@ class TestToolIndicatorHandler:
         h = _make_handler(cfg, sent)
         await h.on_tool_start({"name": "mystery_tool"}, "", inputs={})
         await h.close()
-        assert sent == ["🔧 mystery_tool"]
+        assert sent == ["🔧 mystery_tool~"]
 
     @pytest.mark.asyncio
     async def test_missing_tool_name_is_ignored(self) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any, Awaitable, Callable
@@ -36,6 +37,35 @@ _TOOL_EMOJI: dict[str, str] = {
     "react": "💫",
 }
 _DEFAULT_EMOJI = "🔧"
+
+_TOOL_PHRASES: dict[str, tuple[str, ...]] = {
+    "read_file": ("peeking~", "snooping~", "peering~", "ogling~"),
+    "glob": ("rummaging~", "sniffing~", "hunting~"),
+    "list_messages": ("peeking~", "skimming~", "eavesdropping~"),
+    "lookup": ("checking~", "peeking~", "sleuthing~"),
+    "write_file": ("scribbling~", "scrawling~", "writing~"),
+    "edit_file": ("tweaking~", "scribbling~", "fiddling~"),
+    "journal": ("journalled~", "scribbled~", "jotted~", "noted~"),
+    "bash": ("clacking~", "tinkering~", "poking~", "whirring~"),
+    "fetch_url": ("browsing~", "fetching~", "peeking~"),
+    "web_search": ("googling~", "prowling~", "hunting~"),
+    "create_memory_block": ("remembering~", "pondering~"),
+    "update_memory_block": ("musing~", "remembering~"),
+    "delete_memory_block": ("forgetting~", "releasing~"),
+    "list_memory_blocks": ("reminiscing~", "pondering~"),
+    "add_schedule": ("clocking~", "winding~", "ticking~"),
+    "list_schedules": ("checking~", "peeking~"),
+    "remove_schedule": ("unwinding~", "clearing~"),
+    "reload_pollers": ("ticking~", "winding~"),
+    "react": ("fluttering~", "sparkling~", "reacting~"),
+}
+
+
+def _phrase_for(tool_name: str) -> str:
+    options = _TOOL_PHRASES.get(tool_name)
+    if not options:
+        return f"{tool_name}~"
+    return random.choice(options)
 
 
 @dataclass
@@ -113,9 +143,10 @@ def arg_hint_for(tool_name: str, tool_input: Any) -> str | None:
 
 def format_entry(tool_name: str, hint: str | None, show_hint: bool) -> str:
     emoji = _TOOL_EMOJI.get(tool_name, _DEFAULT_EMOJI)
+    phrase = _phrase_for(tool_name)
     if show_hint and hint:
-        return f"{emoji} {tool_name} ({hint})"
-    return f"{emoji} {tool_name}"
+        return f"{emoji} {phrase} ({hint})"
+    return f"{emoji} {phrase}"
 
 
 SendCoro = Callable[[str], Awaitable[None]]
