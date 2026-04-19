@@ -1171,7 +1171,26 @@ class ToolsMixin:
                 return f"Channel {target_channel_id} does not support fetch_message."
 
             message = await channel.fetch_message(message_int)
-            await message.add_reaction(emoji)
+            try:
+                await message.add_reaction(emoji)
+            except discord.HTTPException as exc:
+                self.log_event(
+                    "tool_error",
+                    tool="react",
+                    emoji=emoji,
+                    emoji_codepoints=" ".join(f"U+{ord(c):04X}" for c in emoji),
+                    channel_id=target_channel_id,
+                    message_id=str(target_message_id),
+                    error_class=type(exc).__name__,
+                    error_status=getattr(exc, "status", None),
+                    error_code=getattr(exc, "code", None),
+                    error_text=str(exc)[:500],
+                )
+                return (
+                    f"Discord rejected emoji {emoji!r}: {exc}. "
+                    "Only single Unicode emoji (e.g. 👍) or full custom-emoji refs "
+                    "like <:name:id> work — no shortcodes, kaomojis, or text."
+                )
             self.log_event(
                 "tool_call",
                 tool="react",
