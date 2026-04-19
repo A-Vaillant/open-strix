@@ -206,6 +206,7 @@ class SubAgentConfig:
 class AppConfig:
     model: str = DEFAULT_MODEL
     model_max_retries: int = DEFAULT_MODEL_MAX_RETRIES
+    model_kwargs: dict[str, Any] = field(default_factory=dict)
     name: str = ""
     journal_entries_in_prompt: int = 90
     discord_messages_in_prompt: int = 10
@@ -322,6 +323,7 @@ def load_config(layout: RepoLayout) -> AppConfig:
     return AppConfig(
         model=model,
         model_max_retries=max(0, int(loaded.get("model_max_retries", DEFAULT_MODEL_MAX_RETRIES))),
+        model_kwargs=dict(loaded.get("model_kwargs") or {}),
         name=str(loaded.get("name", "")).strip(),
         journal_entries_in_prompt=int(loaded.get("journal_entries_in_prompt", 90)),
         discord_messages_in_prompt=int(loaded.get("discord_messages_in_prompt", 10)),

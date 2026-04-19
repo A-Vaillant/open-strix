@@ -120,14 +120,19 @@ def _model_for_deep_agents(model_name: str) -> str:
     return f"{DEFAULT_MODEL_PROVIDER}:{cleaned}"
 
 
-def _build_chat_model(model_name: str, *, max_retries: int = DEFAULT_MODEL_MAX_RETRIES) -> Any:
-    # Keep the same OpenAI initialization behavior as deepagents while making
-    # provider retries explicit in open-strix config.
+def _build_chat_model(
+    model_name: str,
+    *,
+    max_retries: int = DEFAULT_MODEL_MAX_RETRIES,
+    model_kwargs: dict[str, Any] | None = None,
+) -> Any:
     model_init_params: dict[str, Any] = {
         "max_retries": max(0, int(max_retries)),
     }
     if model_name.startswith("openai:"):
         model_init_params["use_responses_api"] = True
+    if model_kwargs:
+        model_init_params.update(model_kwargs)
     return init_chat_model(model_name, **model_init_params)
 
 
@@ -461,6 +466,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         model = _build_chat_model(
             model_name,
             max_retries=self.config.model_max_retries,
+            model_kwargs=self.config.model_kwargs,
         )
         skills_sources: list[str] = []
         if self.layout.skills_dir.exists():
