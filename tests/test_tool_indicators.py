@@ -227,7 +227,7 @@ class TestToolIndicatorHandler:
         assert "✍️" in sent[0] and "(a.md)" in sent[0]
         assert "🔍" in sent[0] and "(b.md)" in sent[0]
         assert "⚙️" in sent[0] and "(ls)" in sent[0]
-        assert " · " in sent[0]
+        assert "\n" in sent[0]
 
     @pytest.mark.asyncio
     async def test_timer_flushes_mid_stream(self) -> None:

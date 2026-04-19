@@ -232,7 +232,7 @@ class ToolIndicatorHandler(AsyncCallbackHandler):
         if not self._buffer:
             return
         entries, self._buffer = self._buffer, []
-        text = " · ".join(entries)
+        text = "\n".join(entries)
         try:
             await self._send(text)
         except Exception as exc:  # pragma: no cover - defensive
