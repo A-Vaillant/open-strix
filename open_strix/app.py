@@ -581,12 +581,24 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
             return False
         return str(author_id) in self.config.always_respond_bot_ids
 
+    def is_channel_allowed(self, channel_id: str | int | None) -> bool:
+        if not self.config.allowed_channel_ids:
+            return True
+        if channel_id is None:
+            return False
+        if self.is_local_web_channel(channel_id):
+            return True
+        return str(channel_id) in self.config.allowed_channel_ids
+
     def should_process_discord_message(
         self,
         *,
         author_is_bot: bool,
         author_id: str | int | None,
+        channel_id: str | int | None = None,
     ) -> bool:
+        if not self.is_channel_allowed(channel_id):
+            return False
         if not author_is_bot:
             return True
         return self.should_respond_to_bot(author_id)

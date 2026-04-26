@@ -212,6 +212,7 @@ class AppConfig:
     discord_messages_in_prompt: int = 10
     discord_token_env: str = "DISCORD_TOKEN"
     always_respond_bot_ids: set[str] = field(default_factory=set)
+    allowed_channel_ids: list[str] = field(default_factory=list)
     session_log_retention_days: int = 30
     api_port: int = 0
     web_ui_port: int = 0
@@ -252,6 +253,25 @@ def _normalize_id_list(value: Any) -> set[str]:
         }
         return normalized
     return set()
+
+
+def _normalize_id_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",")]
+        return [item for item in items if item]
+    if isinstance(value, list):
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            normalized = str(item).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(normalized)
+        return result
+    return []
 
 
 def _parse_folders(raw: Any) -> dict[str, str]:
@@ -329,6 +349,7 @@ def load_config(layout: RepoLayout) -> AppConfig:
         discord_messages_in_prompt=int(loaded.get("discord_messages_in_prompt", 10)),
         discord_token_env=str(loaded.get("discord_token_env", "DISCORD_TOKEN")),
         always_respond_bot_ids=_normalize_id_list(loaded.get("always_respond_bot_ids")),
+        allowed_channel_ids=_normalize_id_string_list(loaded.get("allowed_channel_ids")),
         session_log_retention_days=int(loaded.get("session_log_retention_days", 30)),
         api_port=int(loaded.get("api_port", 0)),
         web_ui_port=int(loaded.get("web_ui_port", 0)),

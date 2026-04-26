@@ -99,6 +99,152 @@ def test_bot_allowlist_config_controls_message_processing(
     assert app.should_process_discord_message(author_is_bot=True, author_id="42") is True
 
 
+def test_allowed_channel_ids_defaults_to_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    assert app.config.allowed_channel_ids == []
+
+
+def test_allowed_channel_ids_parsed_from_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n"
+        "  - 222\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    assert app.config.allowed_channel_ids == ["111", "222"]
+
+
+def test_is_channel_allowed_when_allowlist_empty_allows_anything(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    assert app.is_channel_allowed("999") is True
+    assert app.is_channel_allowed(None) is True
+
+
+def test_is_channel_allowed_with_non_empty_allowlist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n"
+        "  - \"222\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    assert app.is_channel_allowed("111") is True
+    assert app.is_channel_allowed(222) is True  # int channel_id stringified
+    assert app.is_channel_allowed("333") is False
+    assert app.is_channel_allowed(None) is False
+
+
+def test_should_process_discord_message_rejects_non_allowlisted_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    assert app.should_process_discord_message(
+        author_is_bot=False, author_id=None, channel_id="111",
+    ) is True
+    assert app.should_process_discord_message(
+        author_is_bot=False, author_id=None, channel_id="999",
+    ) is False
+    assert app.should_process_discord_message(
+        author_is_bot=False, author_id=None, channel_id=None,
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_on_message_drops_non_allowlisted_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    handled: list[Any] = []
+
+    async def fake_handle(message: Any) -> None:
+        handled.append(message)
+
+    monkeypatch.setattr(app, "handle_discord_message", fake_handle)
+
+    class FakeAuthor:
+        bot = False
+        id = 7
+
+        def __str__(self) -> str:
+            return "alice"
+
+    blocked = SimpleNamespace(
+        id=1,
+        content="ignore me",
+        channel=SimpleNamespace(id=999),
+        author=FakeAuthor(),
+        attachments=[],
+    )
+    allowed = SimpleNamespace(
+        id=2,
+        content="hear me",
+        channel=SimpleNamespace(id=111),
+        author=FakeAuthor(),
+        attachments=[],
+    )
+
+    from open_strix.discord import DiscordBridge
+    bridge = DiscordBridge.__new__(DiscordBridge)
+    bridge._app = app  # type: ignore[attr-defined]
+
+    await DiscordBridge.on_message(bridge, blocked)
+    await DiscordBridge.on_message(bridge, allowed)
+
+    assert [m.id for m in handled] == [2]
+
+
+def test_is_channel_allowed_local_web_bypasses_allowlist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    assert app.is_channel_allowed(app.config.web_ui_channel_id) is True
+
+
 def test_custom_model_max_retries_is_passed_to_model_init(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1861,3 +2007,159 @@ async def test_process_event_does_not_send_final_text_when_agent_skips_send_mess
     )
 
     assert channel.sent == []
+
+
+@pytest.mark.asyncio
+async def test_send_message_blocked_for_non_allowlisted_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    class FakeMessageable:
+        pass
+
+    class FakeChannel(FakeMessageable):
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, text: str) -> None:
+            self.sent.append(text)
+
+    class FakeDiscordClient:
+        def __init__(self, channel: FakeChannel) -> None:
+            self.channel = channel
+
+        def is_ready(self) -> bool:
+            return True
+
+        def get_channel(self, _: int) -> FakeChannel:
+            return self.channel
+
+        async def fetch_channel(self, _: int) -> FakeChannel:
+            return self.channel
+
+    channel = FakeChannel()
+    app.discord_client = FakeDiscordClient(channel)  # type: ignore[assignment]
+    monkeypatch.setattr(app_mod.discord.abc, "Messageable", FakeMessageable)
+
+    tools = {tool.name: tool for tool in app._build_tools()}
+    result = await tools["send_message"].ainvoke({"text": "leak", "channel_id": "999"})
+
+    assert "BLOCKED" in result
+    assert "999" in result
+    assert "allowed_channel_ids" in result
+    assert channel.sent == []
+
+
+@pytest.mark.asyncio
+async def test_send_message_allows_allowlisted_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"123\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+
+    class FakeMessageable:
+        pass
+
+    class FakeChannel(FakeMessageable):
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, text: str) -> None:
+            self.sent.append(text)
+
+    class FakeDiscordClient:
+        def __init__(self, channel: FakeChannel) -> None:
+            self.channel = channel
+
+        def is_ready(self) -> bool:
+            return True
+
+        def get_channel(self, _: int) -> FakeChannel:
+            return self.channel
+
+        async def fetch_channel(self, _: int) -> FakeChannel:
+            return self.channel
+
+    channel = FakeChannel()
+    app.discord_client = FakeDiscordClient(channel)  # type: ignore[assignment]
+    monkeypatch.setattr(app_mod.discord.abc, "Messageable", FakeMessageable)
+
+    tools = {tool.name: tool for tool in app._build_tools()}
+    result = await tools["send_message"].ainvoke({"text": "hi", "channel_id": "123"})
+
+    assert "sent=True" in result
+    assert channel.sent == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_react_blocked_for_non_allowlisted_channel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_agent_factory(monkeypatch)
+    (tmp_path / "config.yaml").write_text(
+        "allowed_channel_ids:\n"
+        "  - \"111\"\n",
+        encoding="utf-8",
+    )
+    app = app_mod.OpenStrixApp(tmp_path)
+    app.current_channel_id = "999"
+
+    class FakeMessage:
+        def __init__(self) -> None:
+            self.reactions: list[str] = []
+
+        async def add_reaction(self, emoji: str) -> None:
+            self.reactions.append(emoji)
+
+    class FakeChannel:
+        def __init__(self) -> None:
+            self.message = FakeMessage()
+
+        async def fetch_message(self, message_id: int) -> FakeMessage:
+            return self.message
+
+    class FakeDiscordClient:
+        def __init__(self, channel: FakeChannel) -> None:
+            self.channel = channel
+
+        def is_ready(self) -> bool:
+            return True
+
+        def get_channel(self, _: int) -> FakeChannel:
+            return self.channel
+
+        async def fetch_channel(self, _: int) -> FakeChannel:
+            return self.channel
+
+    channel = FakeChannel()
+    app.discord_client = FakeDiscordClient(channel)  # type: ignore[assignment]
+    app._remember_message(
+        channel_id="999",
+        message_id="777",
+        author="alice",
+        content="hi",
+        attachment_names=[],
+    )
+
+    tools = {tool.name: tool for tool in app._build_tools()}
+    result = await tools["react"].ainvoke({"emoji": "👍"})
+
+    assert "BLOCKED" in result
+    assert "999" in result
+    assert "allowed_channel_ids" in result
+    assert channel.message.reactions == []

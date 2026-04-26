@@ -373,6 +373,18 @@ class ToolsMixin:
             if target_channel_id is None:
                 return "No channel_id provided and no current event channel is available."
 
+            if not self.is_channel_allowed(target_channel_id):
+                self.log_event(
+                    "tool_call_blocked",
+                    tool="send_message",
+                    channel_id=target_channel_id,
+                    reason="allowlist",
+                )
+                return (
+                    f"BLOCKED: channel {target_channel_id} is not in "
+                    "allowed_channel_ids."
+                )
+
             similarity_basis = text
             if attachment_names:
                 similarity_basis = (
@@ -1131,6 +1143,18 @@ class ToolsMixin:
                 return "No message found to react to."
             if target_channel_id is None:
                 return "No channel_id provided and no channel could be inferred."
+
+            if not self.is_channel_allowed(target_channel_id):
+                self.log_event(
+                    "tool_call_blocked",
+                    tool="react",
+                    channel_id=target_channel_id,
+                    reason="allowlist",
+                )
+                return (
+                    f"BLOCKED: channel {target_channel_id} is not in "
+                    "allowed_channel_ids."
+                )
 
             if self.is_local_web_channel(target_channel_id):
                 reacted = await self._react_to_message(
