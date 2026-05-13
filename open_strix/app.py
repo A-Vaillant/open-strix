@@ -376,6 +376,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self._send_message_similarity_streak = 0
         self._send_message_circuit_breaker_active = False
         self._send_message_warning_reaction_sent = False
+        self._tool_call_counts: dict[tuple[str, str], int] = {}
         self._last_turn_failure: str | None = None
 
         self.phone_book = load_phone_book(self.layout.phone_book_file)
@@ -905,6 +906,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
     async def _process_event(self, event: AgentEvent) -> None:
         self._current_turn_sent_messages = []
         self._reset_send_message_circuit_breaker()
+        self._reset_tool_loop_tracker()
         prompt = self._render_prompt(event)
         self.log_event(
             "agent_invoke_start",
@@ -970,6 +972,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                 except Exception:
                     pass
             self._reset_send_message_circuit_breaker()
+            self._reset_tool_loop_tracker()
             self._current_turn_sent_messages = None
 
     def _log_agent_trace(self, result: dict[str, Any]) -> None:

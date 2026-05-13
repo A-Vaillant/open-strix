@@ -30,9 +30,25 @@ SEND_MESSAGE_LOOP_WARN_LIMIT = 7
 SEND_MESSAGE_LOOP_HARD_LIMIT = 10
 SEND_MESSAGE_LOOP_SIMILARITY_THRESHOLD = 0.98
 
+# Generic per-turn loop detector. Any tool called with identical arguments
+# more than this many times in one turn gets a hard-stop response instead
+# of executing. send_message has its own similarity-based circuit breaker.
+TOOL_LOOP_DETECTION_LIMIT = 3
+TOOL_LOOP_DETECTION_EXEMPT: frozenset[str] = frozenset({"send_message"})
+
 
 class SendMessageCircuitBreakerStop(RuntimeError):
     """Raised when send_message loop detection hard-stops the current turn."""
+
+
+def _hash_tool_args(args: dict[str, Any] | None) -> str:
+    if not args:
+        return "()"
+    try:
+        canonical = json.dumps(args, sort_keys=True, ensure_ascii=True, default=str)
+    except (TypeError, ValueError):
+        canonical = repr(sorted(args.items()))
+    return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _parse_time_window(value: str | None) -> timedelta | None:
@@ -238,6 +254,67 @@ class ToolsMixin:
         self._send_message_similarity_streak = 0
         self._send_message_circuit_breaker_active = False
         self._send_message_warning_reaction_sent = False
+
+    def _reset_tool_loop_tracker(self) -> None:
+        self._tool_call_counts: dict[tuple[str, str], int] = {}
+
+    def _attach_loop_detector(self, tools: list[Any]) -> list[Any]:
+        """Wrap each tool with a per-turn identical-call counter.
+
+        Same (tool_name, args) called > TOOL_LOOP_DETECTION_LIMIT times in one
+        turn returns a loop-stop string instead of executing. Tools in
+        TOOL_LOOP_DETECTION_EXEMPT are skipped (they have their own breakers).
+        """
+        if not hasattr(self, "_tool_call_counts"):
+            self._reset_tool_loop_tracker()
+
+        def _check(name: str, kwargs: dict[str, Any]) -> str | None:
+            key = (name, _hash_tool_args(kwargs))
+            count = self._tool_call_counts.get(key, 0) + 1
+            self._tool_call_counts[key] = count
+            if count > TOOL_LOOP_DETECTION_LIMIT:
+                self.log_event(
+                    "tool_loop_hard_stop",
+                    tool=name,
+                    count=count,
+                    args_hash=key[1],
+                )
+                return (
+                    f"LOOP DETECTED: tool `{name}` has been called with identical "
+                    f"arguments {count} times this turn. Refusing further executions. "
+                    "The repeated call is not making progress. "
+                    "Stop calling this tool with these arguments. Try a different "
+                    "approach, or finish the turn."
+                )
+            return None
+
+        def _make_sync_wrapper(name: str, original):
+            def wrapped(*args: Any, **kwargs: Any) -> Any:
+                blocked = _check(name, kwargs)
+                if blocked is not None:
+                    return blocked
+                return original(*args, **kwargs)
+            return wrapped
+
+        def _make_async_wrapper(name: str, original):
+            async def wrapped(*args: Any, **kwargs: Any) -> Any:
+                blocked = _check(name, kwargs)
+                if blocked is not None:
+                    return blocked
+                return await original(*args, **kwargs)
+            return wrapped
+
+        for tool_obj in tools:
+            name = getattr(tool_obj, "name", None)
+            if not name or name in TOOL_LOOP_DETECTION_EXEMPT:
+                continue
+            orig_func = getattr(tool_obj, "func", None)
+            orig_coro = getattr(tool_obj, "coroutine", None)
+            if orig_func is not None:
+                tool_obj.func = _make_sync_wrapper(name, orig_func)
+            if orig_coro is not None:
+                tool_obj.coroutine = _make_async_wrapper(name, orig_coro)
+        return tools
 
     def _latest_agent_message_reference(
         self,
@@ -1514,4 +1591,5 @@ class ToolsMixin:
         if self.web_search_enabled:
             web_search.handle_tool_error = True
             tools.insert(4, web_search)
+        self._attach_loop_detector(tools)
         return tools
